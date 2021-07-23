@@ -1,0 +1,619 @@
+from tkinter import filedialog
+from tkinter import * 
+from tkinter.ttk import *
+import networkx as nx
+import re
+import math
+
+from numpy.ma import var
+from pptx import Presentation
+from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE as MSO_SHAPE
+from pptx.util import Inches,Pt
+from pptx.enum.shapes import MSO_CONNECTOR_TYPE as MSO_CONNECTOR
+import tkinter.colorchooser as cc
+from tkinter import messagebox
+import random
+import tkinter
+
+'''
+将文件读取整体放在了开始读取的按钮中
+增加了是否自动修改大小
+增加了手动修改节点颜色的按钮
+修复了不选择颜色时报错的问题
+文件保存名字后增加了时间戳来防止保存出错
+'''
+
+LAYOUT_KIND = 0  # 0-spring 1-circular 2-random 3-shell 4-spectral
+CONNECTOR_CHOICE = 0 #0-直线 1-曲线 2-直角曲线
+NODE_SIZE_SELECTION = 0
+NODE_COLOR_SELECTION = 1
+file_path = ''
+attr_file_path = ''
+NODE_MAX_SIZE = 0.6  #Inches
+NODE_MIN_SIZE = 0.3 #Inches
+LINE_SIZE = 0.1  #Inches
+FONT_SIZE = 15   #Pt
+indexx = 0
+edges = []#保存边关系
+colors = []#保存节点或者属性颜色
+
+#节点连线字体的颜色
+#NODE_COLOR_RGB = RGBColor(64,128,128)
+LINE_COLOR_RGB = RGBColor(192,192,192)
+FONT_COLOR_RGB = RGBColor(255,255,255)
+n = dict()
+n_reverse = dict() 
+attribute = dict()
+index_of_attribute = list()#序号，属性名称
+
+#choose the layout kind
+def getposition(G,choice):
+    if choice ==1:
+        return nx.circular_layout(G)
+    elif choice ==2:
+        return nx.random_layout(G)
+    elif choice ==3:
+        return nx.shell_layout(G)
+    elif choice ==4:
+        return nx.spectral_layout(G)
+    else :
+        return nx.spring_layout(G)
+
+def get_node_size(n_degree,dif_degree,dif_size):
+    temp = n_degree/100
+    node_size = NODE_MIN_SIZE + (dif_size) * temp
+    if dif_degree!=0:
+        node_size += temp*10/ (dif_degree)
+    return node_size
+
+'''
+generate colors accroding to the amount of attributes or nodes
+input:int 
+output:list
+'''
+def get_colors(n):
+    colors = list(map(lambda i: "#" + "%06x" % random.randint(0, 0xFFFFFF),range(n)))
+    return colors
+
+mark = int()
+def change_node_color(str):
+    global mark
+    global colors
+    choose = cc.askcolor()
+    if choose[1] is None:
+        return
+    else:
+        i = 0
+        count = 0
+        for key in attribute:
+            if str == key:
+                i = count
+            else:
+                count += 1
+        tmp = choose[1]
+        colors[i] = tmp
+        color = colors[i]
+        labels[i].configure(background=color,text='灞炴€?+str+'棰滆壊'+color)
+
+labels = []
+def color_selection():
+    top = Toplevel()
+    buttons = []
+    global labels
+    global colors
+    global index_of_attribute
+    global attribute
+    
+    label_combo = Label(master=top, text = '请选择需要修改颜色的属性')
+    label_combo.grid(row=1, column=5)
+    combo_top = Combobox(top)
+    tmp = []
+    for key in attribute:
+        tmp.append(key)
+    tuple_att = tuple(tmp)
+    combo_top['values'] = tuple_att
+    combo_top.grid(row=1, column=6)
+    set(combo_top['value'][0])
+    for i in range(len(colors)):
+        label = Label(master=top)
+        color = colors[i]
+        label.configure(background=color,text="属性"+index_of_attribute[i]+"默认颜色")
+        label.grid(row=(i)%25, column=int((i)/25))
+        labels.append(label)
+    e1 = combo_top
+    button = Button(text="选择属性颜色", master=top,command = lambda :change_node_color(e1.get()))
+    button.grid(row=3, column=5)
+    button_off = Button(text="确定", master=top,command=top.destroy)
+    button_off.grid(row=3, column=6)
+    window.wait_window(top)
+    return colors
+
+def change_node_color_without_attr(str):
+    global mark
+    global colors
+    choose = cc.askcolor()
+    if choose[1] is None:
+        return
+    else:
+        i = 0
+        count = 0
+        global n_reverse
+        i = n_reverse[str]
+        tmp = choose[1]
+        colors[i] = tmp
+        color = colors[i]
+        labels[i].configure(background=color,text=n[i][0]+'节点颜色'+color)
+
+def color_selection_without_attribute():
+    top = Toplevel()
+    global labels
+    global colors
+    global n
+    
+    label_combo = Label(master=top, text = '请选择需要修改颜色的节点')
+    label_combo.grid(row=1, column=5)
+    combo_top = Combobox(top)
+    tmp = []
+    for i in range(len(n)):
+        tmp.append(n[i][0])
+    tuple_att = tuple(tmp)
+    combo_top['values'] = tuple_att
+    #combo_top.current(n[0][0])
+    combo_top.grid(row=1, column=6)
+    set(combo_top['value'][0])
+
+    for i in range(1,len(n)+1):
+        label = Label(master=top)
+        color = colors[i-1]
+        label.configure(background=color,text="鑺傜偣"+n[i-1][0]+"榛樿棰滆壊")
+        label.grid(row=(i-1)%25, column=int((i-1)/25))
+        labels.append(label)
+    '''for i in range(len(attribute)):
+        #button = Button(text="閫夋嫨"+index_of_attribute[i]+"灞炴€ч鑹?, master=window,command = change_node_color(colors,i))
+        button = Button(text=index_of_attribute[i], master=top,command = lambda :change_node_color(button['text']))
+        button.grid(row=i+1, column=2)
+        buttons.append(button)'''
+    '''for i in range(len(attribute)):
+        color = colors[i]
+        labels[i].configure(background=color,text='棰滆壊'+color)'''
+    e1 = combo_top
+    button = Button(text="閫夋嫨鑺傜偣棰滆壊", master=top,command=lambda:change_node_color_without_attr(e1.get()))
+    button.grid(row=1, column=7)
+    button_off = Button(text="纭畾", master=top,command=top.destroy)
+    button_off.grid(row=1, column=8)
+    window.wait_window(top)
+    return colors
+
+# 閫夋嫨杩炴帴鐨勮妭鐐圭殑鍝釜绔偣锛?-涓婏紝1-宸︼紝2-涓婏紝3-鍙筹級
+def getdirec(node1, node2):
+    direc = []
+    temp_x = node2[0] - node1[0]
+    temp_y = node2[1] - node1[1]
+    if (temp_y >= 0 and abs(temp_x) < temp_y):
+        direc.append(0)
+        direc.append(2)
+    elif (temp_y <= 0 and abs(temp_x) < abs(temp_y)):
+        direc.append(2)
+        direc.append(0)
+    elif (temp_x >= 0 and abs(temp_y) < temp_x):
+        direc.append(3)
+        direc.append(1)
+    else:
+        direc.append(1)
+        direc.append(3)
+    return direc
+
+#涓昏鍔熻兘
+def main_function():
+
+    global LAYOUT_KIND
+    global CONNECTOR_KIND
+    global NODE_SIZE_SELECTION
+
+    CONNECTOR_KIND = combo1.get()
+    LAYOUT_KIND = combo.get()
+    NODE_SIZE_SELECTION = combo2.get()
+
+
+    if attr_file_path == '':
+        G = nx.Graph()
+        G.add_edges_from(edges)
+        G.add_nodes_from(list(range(len(n))))
+        LAYOUT_KIND = combo.get()
+        #鎸夌収閫夋嫨鐨勫竷灞€绫诲瀷鑾峰彇鐐圭殑甯冨眬
+        pos=getposition(G,LAYOUT_KIND)
+
+        #鐢熸垚骞荤伅鐗?
+        prs = Presentation()
+        slide_layout = prs.slide_layouts[5]
+        slide = prs.slides.add_slide(slide_layout)
+        shapes = slide.shapes
+
+        nodes=[]
+        #unit_size = (NODE_MAX_SIZE-NODE_MIN_SIZE)/(max_degree-min_degree)
+        global colors
+        global NODE_COLOR_SELECTION
+        NODE_COLOR_SELECTION = combo_color.get()
+        #鐢熸垚鑺傜偣涓暟涓殢鏈洪鑹?
+        colors = get_colors(len(n))
+        if NODE_COLOR_SELECTION == "0":
+            colors = color_selection_without_attribute()
+        NODE_SIZE_SELECTION = combo2.get()
+        #鐢熸垚鑺傜偣锛屾彃鍏ュ埌shapes涓?
+        for i in range(len(n)):
+            #default:  width-10 inches   height-7.46inches
+            (x, y) = pos[i]
+            #node_size = NODE_MIN_SIZE + unit_size * (n[i][2]-min_degree)
+            #node_size = NODE_MIN_SIZE + (NODE_MAX_SIZE - NODE_MIN_SIZE) * math.sin(n[i][2] / 100)
+            #node_size = NODE_MIN_SIZE + (NODE_MAX_SIZE - NODE_MIN_SIZE) * (n[i][2] / 100) + (n[i][2]/100)/ (max_degree - min_degree)
+
+            if NODE_SIZE_SELECTION == '0':
+                #print('.......')
+                node_size = get_node_size(n[i][2], dif_degree, dif_size)
+            elif NODE_SIZE_SELECTION=='1':
+                node_size = 0.5
+                #print('******')
+            nodes.append(shapes.add_shape(MSO_SHAPE.OVAL, Inches(5*(x+1)), Inches(3.7*(1-y)), Inches(node_size),Inches(node_size)))
+            frame = nodes[i].text_frame
+            frame.word_wrap = FALSE
+            para = frame.paragraphs[0]
+            run = para.add_run()
+            run.text = n[i][0]
+            run.font.size = Pt(FONT_SIZE)
+            #n[i][1] 瀛樼殑鏄睘鎬э紝鐩墠鏄瓧绗︾被鍨?
+            run.font.color.rgb = FONT_COLOR_RGB
+            #set the color of the cycle
+            fill = nodes[i].fill
+            fill.solid()
+            att = n[i][1]
+            color = Hex_to_RGB(colors[i])
+
+            fill.fore_color.rgb = RGBColor(color[0],color[1],color[2])
+            nodes[i].line.color.rgb = RGBColor(color[0],color[1],color[2])
+    else:
+         #鏂板缓鍥惧璞?
+        G = nx.Graph()
+
+        G.add_edges_from(edges)
+        G.add_nodes_from(list(range(len(n))))
+        LAYOUT_KIND = combo.get()
+        #鎸夌収閫夋嫨鐨勫竷灞€绫诲瀷鑾峰彇鐐圭殑甯冨眬
+        pos=getposition(G,LAYOUT_KIND)
+
+        #鐢熸垚骞荤伅鐗?
+        prs = Presentation()
+        slide_layout = prs.slide_layouts[5]
+        slide = prs.slides.add_slide(slide_layout)
+        shapes = slide.shapes
+
+        nodes=[]
+        #unit_size = (NODE_MAX_SIZE-NODE_MIN_SIZE)/(max_degree-min_degree)
+
+        #鐢熸垚绉嶇被涓暟涓殢鏈洪鑹?
+        colors = get_colors(len(attribute))
+        #atrribute:灞炴€у瓧鍏?key:灞炴€?Value:棰滆壊RGB
+        i = 0
+
+
+        NODE_COLOR_SELECTION = combo_color.get()
+        if NODE_COLOR_SELECTION == '0':
+            colors = color_selection()
+        for key in attribute:
+            color = Hex_to_RGB(colors[i])
+            #color_RGB = RGBColor(color[0],color[1],color[2])
+            attribute[key] = color
+            i += 1
+
+        NODE_SIZE_SELECTION = combo2.get()
+        #鐢熸垚鑺傜偣锛屾彃鍏ュ埌shapes涓?
+        for i in range(len(n)):
+            #default:  width-10 inches   height-7.46inches
+            (x, y) = pos[i]
+            if NODE_SIZE_SELECTION=='0':
+                node_size = get_node_size(n[i][2],dif_degree,dif_size)
+                #print('......')
+            elif NODE_SIZE_SELECTION=='1':
+                node_size=0.4
+                #print('******')
+            nodes.append(shapes.add_shape(MSO_SHAPE.OVAL, Inches(5*(x+1)), Inches(3.7*(1-y)), Inches(node_size),Inches(node_size)))
+            frame = nodes[i].text_frame
+            frame.word_wrap = FALSE
+            para = frame.paragraphs[0]
+            run = para.add_run()
+            run.text = n[i][0]
+            run.font.size = Pt(FONT_SIZE)
+            #n[i][1] 瀛樼殑鏄睘鎬э紝鐩墠鏄瓧绗︾被鍨?
+            run.font.color.rgb = FONT_COLOR_RGB
+            #set the color of the cycle
+            fill = nodes[i].fill
+            fill.solid()
+            att = n[i][1]
+            color = attribute[att]
+            fill.fore_color.rgb = RGBColor(color[0],color[1],color[2])
+            nodes[i].line.color.rgb = RGBColor(color[0],color[1],color[2])
+
+
+
+    #鐢熸垚鑺傜偣涔嬮棿鐨勮繛鎺ョ嚎锛屾彃鍏ュ埌shapes涓?
+    for i in range(len(G.edges)):
+        global CONNECTOR_CHOICE
+        CONNECTOR_CHOICE = combo1.get()
+        if int(CONNECTOR_CHOICE) == 1:
+            connector = shapes.add_connector(
+            MSO_CONNECTOR.CURVE, 0, 0, 0, 0
+        )
+        elif int(CONNECTOR_CHOICE) == 2:
+            connector = shapes.add_connector(
+            MSO_CONNECTOR.ELBOW, 0, 0, 0, 0
+        )
+        else:
+            connector = shapes.add_connector(
+            MSO_CONNECTOR.STRAIGHT, 0, 0, 0, 0
+        )
+
+        direc = getdirec(pos[edges[i][0]],pos[edges[i][1]])
+        connector.begin_connect(nodes[edges[i][0]],direc[0])
+        connector.end_connect(nodes[edges[i][1]],direc[1])
+        connector.line.color.rgb = LINE_COLOR_RGB
+
+    #鎶婅妭鐐逛綅缃斁鍒拌繛鎺ョ嚎褰㈢姸鐨勫悗闈紝杩欐牱鑺傜偣鍙互鍏堟槸鍦ㄨ繛鎺ョ嚎涓婃柟
+    for i in range(len(nodes)):
+        cursor_sp = shapes[len(shapes)-1]._element
+        cursor_sp.addnext(shapes[0]._element)
+
+    #淇濆瓨鏂囦欢锛屽皢鏂囦欢杈撳叆璺緞杩涜鍒嗗壊锛屽彇.txt鍓嶉潰鐨勯儴鍒?
+    file_save_path = re.split("\.txt", file_path)
+    save_path = file_save_path[0]
+    prs.save(save_path + '.pptx')
+    messagebox.showinfo("淇濆瓨", "鏂囦欢淇濆瓨瀹屾瘯锛?)
+    window.destroy()
+
+
+
+#鍒嗗壊绾匡細鍚庨潰閮芥槸绋嬪簭鐣岄潰鐨勪唬鐮?
+#娴忚鏂囦欢
+def browse_button():
+    filename = filedialog.askopenfilename()
+    if 'txt' in filename:
+        global file_path
+        file_path = filename
+        file = open(file_path, 'rb')
+        line = file.readline()
+        line_de = line.decode()
+        if 'net' not in line_de:
+            messagebox.showinfo("閿欒", "缃戠粶鍏崇郴鏂囦欢杈撳叆閿欒锛?)
+        else:
+            lbl1.configure(text = filename)
+            file = open(file_path,'rb')
+            line = file.readline()
+            global eges
+
+            # 鏂逛究蹇€熺敱搴忓彿鎵惧埌鑺傜偣鍚嶏紝鐢辫妭鐐瑰悕鎵惧埌瀵瑰簲鐨勫簭鍙?
+            global n # 淇濆瓨鑺傜偣,(搴忓彿锛孾鑺傜偣鍚嶇О,灞炴€э紝搴)
+            global n_reverse# (鑺傜偣鍚嶇О锛屽簭鍙?
+
+            # 璇诲彇鏂囦欢涓殑鑺傜偣鍜岃竟
+            index = 0 # 璁板綍搴忓彿
+
+            line = file.readline()
+            while line:
+                #edge = line.decode().split('锛?)
+                line_de = line.decode()
+                edge = re.split(r'[锛?\r]', line_de)
+                x = edge[0]
+                x_index,y_index=0,0
+                if x in n_reverse:
+                    x_index = n_reverse.get(x)
+                else:
+                    n[index]= [x, None, 0]
+                    n_reverse[x]=index
+                    x_index = index
+                    index += 1
+                # 鑺傜偣鐨勫害+1
+                temp = n[x_index]
+                temp[2] += 1
+                y = edge[1]
+                if y in n_reverse:
+                    y_index = n_reverse.get(y)
+                else:
+                    n[index]=[y, None, 0]
+                    n_reverse[y]=index
+                    y_index = index
+                    index += 1
+                # 鑺傜偣鐨勫害+1
+                temp = n[y_index]
+                temp[2] += 1
+                edges.append((x_index,y_index))
+                line = file.readline()
+            global indexx
+            indexx = index
+            max_degree = 0
+            min_degree = 100
+            for i in range(len(n)):
+                if (n[i][2] > max_degree):
+                    max_degree = n[i][2]
+                if (n[i][2] < min_degree):
+                    min_degree = n[i][2]
+            global dif_degree
+            global dif_size
+            dif_degree = max_degree - min_degree
+            dif_size = NODE_MAX_SIZE - NODE_MIN_SIZE
+            if len(n) > 100:
+                messagebox.showinfo("閿欒", "鑺傜偣鏁伴噺搴旇灏忎簬100锛?)
+                return
+    else:
+        messagebox.showinfo("閿欒", "閿欒鐨勬枃浠舵牸寮忚緭鍏?)
+
+
+#涓婁紶灞炴€ф枃浠?
+def browse_attr_button():
+    attr_filename = filedialog.askopenfilename()
+    if 'txt' in attr_filename:
+        global attr_file_path
+        attr_file_path = attr_filename
+        attr_file = open(attr_file_path, 'rb')
+        attr_line = attr_file.readline()
+        line_de = attr_line.decode()
+        if 'node' not in line_de:
+            messagebox.showinfo("閿欒", "鑺傜偣鏂囦欢杈撳叆閿欒锛?)
+        else:
+            attr_lbl.configure(text = attr_filename)
+            global attribute #淇濆瓨灞炴€?
+            index_attribute = 0
+            attr_file = open(attr_file_path,'rb')
+            attr_line = attr_file.readline()
+            line_de = attr_line.decode()
+            attr_line = attr_file.readline()
+            global index_of_attribute
+            global indexx
+            while attr_line:
+                line_de = attr_line.decode()
+                attr = re.split(r'[锛?\r]', line_de)
+                #璇诲彇灞炴€э紝淇濆瓨鍦ㄥ睘鎬у瓧鍏镐腑
+                if attr[1] not in attribute:
+                    attribute[attr[1]] = ''
+                    index_of_attribute.append(attr[1])
+                    index_attribute += 1
+                if attr[0] not in n_reverse:
+                    n[indexx]=[attr[0], attr[1], 0]
+                    n_reverse[attr[0]]=indexx
+                    indexx += 1
+                else:
+                    i = n_reverse.get(attr[0])
+                    temp = n[i]
+                    temp[1] = attr[1]
+                attr_line = attr_file.readline()
+    else:
+        messagebox.showinfo("閿欒", "閿欒鐨勬枃浠舵牸寮忚緭鍏?)
+
+#鐢熸垚ppt鐨勬寜閽?
+def generate_button():
+    main_function()
+
+#鑺傜偣棰滆壊閫夋嫨鍛戒护鎵ц
+def choose_node_color():
+    choose = cc.askcolor()
+    global NODE_COLOR_RGB
+    tmp = choose[1]
+    tmp = Hex_to_RGB(tmp)
+    NODE_COLOR_RGB = RGBColor(tmp[0], tmp[1], tmp[2])
+    #btn_node_color.config(text=tmp)
+    #lbl_node_color.configure(background=choose[1],text=tmp)
+
+#绾挎潯棰滆壊閫夋嫨鍛戒护鎵ц
+def choose_line_color():
+    choose = cc.askcolor()
+    if choose[1] is None:
+        return
+    global LINE_COLOR_RGB
+    tmp = choose[1]
+    tmp = Hex_to_RGB(tmp)
+    LINE_COLOR_RGB = RGBColor(tmp[0], tmp[1], tmp[2])
+    #btn_line_color.config(text=tmp)
+    lbl_line_color.configure(background=choose[1],text=tmp)
+
+
+#瀛椾綋棰滆壊閫夋嫨鍛戒护鎵ц
+def choose_font_color():
+    choose = cc.askcolor()
+    if choose[1] is None:
+        return
+    global FONT_COLOR_RGB
+    tmp = choose[1]
+    tmp = Hex_to_RGB(tmp)
+    FONT_COLOR_RGB = RGBColor(tmp[0], tmp[1], tmp[2])
+    #btn_font_color.config(text=tmp)
+    lbl_font_color.configure(background=choose[1],text=tmp)
+
+# 16杩涘埗棰滆壊鏍煎紡棰滆壊杞崲涓篟GB鏍煎紡
+def Hex_to_RGB(hex):
+    r = int(hex[1:3],16)
+    g = int(hex[3:5],16)
+    b = int(hex[5:7], 16)
+    rgb = []
+    rgb.append(r)
+    rgb.append(g)
+    rgb.append(b)
+    return rgb
+
+
+window = Tk()
+window.title('PPT Net Maker')
+#window.geometry('500x300')
+folder_path = StringVar()
+
+lbl1 = Label(master=window, text = '鐐瑰嚮鍙充晶鎸夐挳涓婁紶鍏崇郴淇℃伅鏂囦欢(.txt):')
+lbl1.grid(row=2, column=1)
+
+button2 = Button(text="Browse", command=browse_button)
+button2.grid(row=2, column=2)
+
+#閫夋嫨灞炴€ф枃浠?
+attr_lbl = Label(master=window, text = '涓婁紶灞炴€т俊鎭枃浠?.txt):\n(鑻ヤ笉闇€瑕佷笂浼犲睘鎬ф枃浠舵椤瑰拷鐣?')
+attr_lbl.grid(row=3,column=1)
+
+attr_button = Button(text="Browse", command=browse_attr_button)
+attr_button.grid(row=3,column=2)
+
+node_size_selection = Label(master=window, text = '鏄惁鑷姩璋冩暣鑺傜偣澶у皬锛歕n0-鏄? 1-鍚n')
+node_size_selection.grid(row=4, column=1)
+combo2 = Combobox(window)
+combo2['values'] = (0,1)
+combo2.current(0)
+combo2.grid(row=4, column=2)
+NODE_SIZE_SELECTION = combo2.get()
+
+node_color_selection = Label(master=window, text = '鏄惁鎵嬪姩璋冩暣鑺傜偣棰滆壊锛堥粯璁や负鍚︼級锛歕n0-鏄? 1-鍚n')
+node_color_selection.grid(row=5, column=1)
+combo_color = Combobox(window)
+combo_color['values'] = (0,1)
+combo_color.current(1)
+combo_color.grid(row=5, column=2)
+NODE_COLOR_SELECTION = combo_color.get()
+
+
+lbl2 = Label(master=window, text = '閫夋嫨鑺傜偣鎺掑竷鏍峰紡锛歕n0-spring_layout\n1-circular_layout\n2-random_layout\n3-shell_layout\n4-spectral_layout')
+lbl2.grid(row=6, column=1)
+combo = Combobox(window)
+combo['values'] = (0,1,2,3,4)
+combo.current(0)
+combo.grid(row=6, column=2)
+LAYOUT_KIND = combo.get()
+
+lbl3 = Label(master=window, text = '閫夋嫨杩炴帴绾挎牱寮忥細\n0-鐩寸嚎\n1-鏇茬嚎\n2-鐩磋鏇茬嚎')
+lbl3.grid(row=7, column=1)
+combo1 = Combobox(window)
+combo1['values'] = (0,1,2)
+combo1.current(0)
+combo1.grid(row=7, column=2)
+
+
+'''鑺傜偣鎸夐挳
+btn_node_color = Button(text='閫夋嫨鑺傜偣棰滆壊', command=choose_node_color)
+btn_node_color.grid(row=6, column=2)
+lbl_node_color = Label(master=window)
+lbl_node_color.configure(background="#408080",text='榛樿棰滆壊涓哄ⅷ缁胯壊')
+lbl_node_color.grid(row=6, column=1)'''
+
+#绾挎潯鎸夐挳
+btn_line_color = Button(text='閫夋嫨绾挎潯棰滆壊', command=choose_line_color)
+btn_line_color.grid(row=8, column=2)
+lbl_line_color = Label(master=window)
+lbl_line_color.configure(background="#C0C0C0",text='榛樿棰滆壊涓虹伆鑹?)
+lbl_line_color.grid(row=8, column=1)
+
+#瀛椾綋鎸夐挳
+btn_font_color = Button(text='閫夋嫨瀛椾綋棰滆壊', command=choose_font_color)
+btn_font_color.grid(row=9, column=2)
+lbl_font_color = Label(master=window)
+lbl_font_color.configure(background="white",text='榛樿棰滆壊涓虹櫧鑹?)
+lbl_font_color.grid(row=9, column=1)
+
+
+lbl4 = Label(master=window, text='鐐瑰嚮鍙充晶鎸夐挳淇濆瓨\n锛堜繚瀛樼殑pptx鏂囦欢\n鍚嶅瓧涓庤緭鍏ヨ妭鐐瑰叧\n绯绘枃浠跺悕鐩稿悓锛屽苟\n淇濆瓨鍦ㄥ悓涓€涓枃浠禱n澶逛笅锛?')
+lbl4.grid(row=10, column=1)
+button3 = Button(text="淇濆瓨", command=generate_button)
+button3.grid(row=10, column=2)
+
+mainloop()
